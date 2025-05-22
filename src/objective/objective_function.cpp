@@ -83,6 +83,8 @@ ObjectiveFunction* ObjectiveFunction::CreateObjectiveFunction(const std::string&
       return new LambdarankNDCG(config);
     } else if (type == std::string("rank_xendcg")) {
       return new RankXENDCG(config);
+    } else if (type == std::string("listnet")) {
+      return new LisetNet(config);
     } else if (type == std::string("multiclass")) {
       return new MulticlassSoftmax(config);
     } else if (type == std::string("multiclassova")) {
@@ -128,6 +130,8 @@ ObjectiveFunction* ObjectiveFunction::CreateObjectiveFunction(const std::string&
     return new LambdarankNDCG(strs);
   } else if (type == std::string("rank_xendcg")) {
     return new RankXENDCG(strs);
+  } else if (type == std::string("listnet")) {
+    return new ListNet(strs);
   } else if (type == std::string("multiclass")) {
     return new MulticlassSoftmax(strs);
   } else if (type == std::string("multiclassova")) {

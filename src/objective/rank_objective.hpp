@@ -455,5 +455,65 @@ class RankXENDCG : public RankingObjective {
   mutable std::vector<Random> rands_;
 };
 
+
+/*!
+ * \brief Implementation of the learning-to-rank objective function, ListNet
+ * [arxiv.org/abs/1511.00271].
+ */
+class ListNet : public RankingObjective {
+ public:
+  explicit istNet(const Config& config) : RankingObjective(config) {}
+
+  explicit ListNet(const std::vector<std::string>& strs)
+      : RankingObjective(strs) {}
+
+  ~ListNet() {}
+
+  void Init(const Metadata& metadata, data_size_t num_data) override {
+    RankingObjective::Init(metadata, num_data);
+  }
+
+  inline void GetGradientsForOneQuery(data_size_t query_id, data_size_t cnt,
+                                      const label_t* label, const double* score,
+                                      score_t* lambdas,
+                                      score_t* hessians) const override {
+    if (cnt <= 1) {
+      for (data_size_t i = 0; i < cnt; ++i) {
+        lambdas[i] = 0.0f;
+        hessians[i] = 0.0f;
+      }
+      return;
+    }
+
+    std::vector<double> exp_pred(cnt);
+    std::vector<double> prob_pred(cnt);
+    std::vector<double> exp_true(cnt);
+    std::vector<double> prob_true(cnt);
+
+    double sum_exp_pred = 0.0;
+    double sum_exp_true = 0.0;
+
+    for (data_size_t i = 0; i < cnt; ++i) {
+      exp_pred[i] = std::exp(score[i]);
+      sum_exp_pred += exp_pred[i];
+      exp_true[i] = std::exp(label[i]);
+      sum_exp_true += exp_true[i];
+    }
+
+    for (data_size_t i = 0; i < cnt; ++i) {
+      prob_pred[i] = exp_pred[i] / sum_exp_pred;
+      prob_true[i] = exp_true[i] / sum_exp_true;
+    }
+
+    for (data_size_t i = 0; i < cnt; ++i) {
+      lambdas[i] = static_cast<score_t>(prob_pred[i] - prob_true[i]);
+      hessians[i] = static_cast<score_t>(prob_pred[i] * (1.0 - prob_pred[i]));
+    }
+  }
+
+  const char* GetName() const override { return "listnet"; }
+};
+
+
 }  // namespace LightGBM
 #endif  // LightGBM_OBJECTIVE_RANK_OBJECTIVE_HPP_
