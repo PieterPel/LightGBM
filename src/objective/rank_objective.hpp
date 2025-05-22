@@ -462,7 +462,7 @@ class RankXENDCG : public RankingObjective {
  */
 class ListNet : public RankingObjective {
  public:
-  explicit istNet(const Config& config) : RankingObjective(config) {}
+  explicit ListNet(const Config& config) : RankingObjective(config) {}
 
   explicit ListNet(const std::vector<std::string>& strs)
       : RankingObjective(strs) {}
