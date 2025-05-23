@@ -351,7 +351,7 @@ if test "${BUILD_SDIST}" = true; then
     # note that empty echo string leads to that xargs doesn't run the command
     # in some implementations of xargs
     # ref: https://stackoverflow.com/a/8296746
-    echo "--sdist --outdir ../dist ${BUILD_ARGS} ." | xargs python -m build
+    echo "--sdist --outdir ../dist ${BUILD_ARGS} ." | xargs uv run -m build
 fi
 
 if test "${BUILD_WHEEL}" = true; then

@@ -514,6 +514,211 @@ class ListNet : public RankingObjective {
   const char* GetName() const override { return "listnet"; }
 };
 
+/*!
+ * \brief Implementation of the learning-to-rank objective function, ListFold
+ * [arxiv.org/abs/2104.12484].
+ */
+
+class ListFold : public RankingObjective {
+ public:
+  explicit ListFold(const Config& config) : RankingObjective(config) {}
+
+  explicit ListFold(const std::vector<std::string>& strs)
+      : RankingObjective(strs) {}
+
+  ~ListFold() {}
+
+  void Init(const Metadata& metadata, data_size_t num_data) override {
+    RankingObjective::Init(metadata, num_data);
+  }
+
+  inline void GetGradientsForOneQuery(data_size_t query_id, data_size_t cnt,
+                                      const label_t* label, const double* score,
+                                      score_t* lambdas,
+                                      score_t* hessians) const override {
+    if (cnt <= 1) {
+      for (data_size_t i = 0; i < cnt; ++i) {
+        lambdas[i] = 0.0f;
+        hessians[i] = 0.0f;
+      }
+      return;
+    }
+
+    std::vector<int> sorted_idx(cnt);
+    std::iota(sorted_idx.begin(), sorted_idx.end(), 0);
+    std::sort(sorted_idx.begin(), sorted_idx.end(),
+              [&](int a, int b) { return label[a] > label[b]; });
+
+    std::vector<double> sorted_scores(cnt);
+    for (int i = 0; i < cnt; ++i) {
+      sorted_scores[i] = score[sorted_idx[i]];
+    }
+
+    std::vector<double> grad = ComputeListFoldGradient(sorted_scores);
+    std::vector<double> hess = ComputeListFoldHessian(sorted_scores);
+
+    for (int i = 0; i < cnt; ++i) {
+      lambdas[sorted_idx[i]] = static_cast<score_t>(grad[i]);
+      hessians[sorted_idx[i]] = static_cast<score_t>(hess[i]);
+    }
+  }
+
+  const char* GetName() const override { return "listfold"; }
+
+ private:
+  std::vector<double> ComputeListFoldGradient(const std::vector<double>& preds) const {
+    int n_total = preds.size();
+    int n = n_total / 2;
+    std::vector<double> grad(n_total, 0.0);
+
+    for (int i = 0; i < n; ++i) {
+      int start = i;
+      int end = n_total - i;
+      int len = end - start;
+
+      std::vector<std::vector<double>> exp_diffs(len, std::vector<double>(len));
+      double S_i = 0.0;
+
+      for (int a = 0; a < len; ++a) {
+        for (int b = 0; b < len; ++b) {
+          exp_diffs[a][b] = std::exp(preds[start + a] - preds[start + b]);
+          if (a != b) S_i += exp_diffs[a][b];
+        }
+      }
+
+      grad[i] -= 1.0;
+      grad[n_total - 1 - i] += 1.0;
+
+      for (int a = 0; a < len; ++a) {
+        double row_sum = 0.0, col_sum = 0.0;
+        for (int b = 0; b < len; ++b) {
+          row_sum += exp_diffs[a][b];
+          col_sum += exp_diffs[b][a];
+        }
+        grad[start + a] += row_sum / S_i - col_sum / S_i;
+      }
+    }
+
+    return grad;
+  }
+
+  std::vector<double> ComputeListFoldHessian(const std::vector<double>& preds) const {
+    int n_total = preds.size();
+    int n = n_total / 2;
+    std::vector<double> hess(n_total, 0.0);
+
+    for (int i = 0; i < n; ++i) {
+      int start = i;
+      int end = n_total - i;
+      int len = end - start;
+
+      std::vector<std::vector<double>> exp_diffs(len, std::vector<double>(len));
+      std::vector<std::vector<double>> sigmoid_diffs(len, std::vector<double>(len));
+      double S_i = 0.0;
+
+      for (int a = 0; a < len; ++a) {
+        for (int b = 0; b < len; ++b) {
+          exp_diffs[a][b] = std::exp(preds[start + a] - preds[start + b]);
+          if (a != b) S_i += exp_diffs[a][b];
+        }
+      }
+
+      for (int a = 0; a < len; ++a) {
+        for (int b = 0; b < len; ++b) {
+          double sig = 1.0 / (1.0 + exp_diffs[a][b]);
+          sigmoid_diffs[a][b] = sig * (1.0 - sig) / S_i;
+        }
+      }
+
+      for (int a = 0; a < len; ++a) {
+        for (int b = 0; b < len; ++b) {
+          hess[start + a] += sigmoid_diffs[a][b];
+          hess[start + b] += sigmoid_diffs[a][b];
+        }
+      }
+    }
+
+    return hess;
+  }
+};
+
+/*!
+ * \brief Implementation of the learning-to-rank objective function, ListMLE
+ * [arxiv.org/abs/1909.06722].
+ */
+class ListMLE : public RankingObjective {
+ public:
+  explicit ListMLE(const Config& config) : RankingObjective(config) {}
+
+  explicit ListMLE(const std::vector<std::string>& strs)
+      : RankingObjective(strs) {}
+
+  ~ListMLE() {}
+
+  void Init(const Metadata& metadata, data_size_t num_data) override {
+    RankingObjective::Init(metadata, num_data);
+  }
+
+  inline void GetGradientsForOneQuery(data_size_t query_id, data_size_t cnt,
+                                      const label_t* label, const double* score,
+                                      score_t* lambdas,
+                                      score_t* hessians) const override {
+    if (cnt <= 1) {
+      for (data_size_t i = 0; i < cnt; ++i) {
+        lambdas[i] = 0.0f;
+        hessians[i] = 0.0f;
+      }
+      return;
+    }
+
+    const double eps = 1e-10;
+
+    // Sort indices by descending label (higher relevance = better)
+    std::vector<int> sorted_idx(cnt);
+    std::iota(sorted_idx.begin(), sorted_idx.end(), 0);
+    std::sort(sorted_idx.begin(), sorted_idx.end(),
+              [&](int a, int b) { return label[a] > label[b]; });
+
+    std::vector<double> sorted_scores(cnt);
+    for (int i = 0; i < cnt; ++i) {
+      sorted_scores[i] = score[sorted_idx[i]];
+    }
+
+    std::vector<double> exp_pred(cnt);
+    for (int i = 0; i < cnt; ++i) {
+      exp_pred[i] = std::exp(sorted_scores[i]);
+    }
+
+    // Compute reverse cumulative sum
+    std::vector<double> sum_exp(cnt);
+    sum_exp[cnt - 1] = exp_pred[cnt - 1];
+    for (int i = cnt - 2; i >= 0; --i) {
+      sum_exp[i] = sum_exp[i + 1] + exp_pred[i];
+    }
+
+    std::vector<double> softmax(cnt);
+    for (int i = 0; i < cnt; ++i) {
+      softmax[i] = exp_pred[i] / (sum_exp[i] + eps);
+    }
+
+    std::vector<double> grad_sorted(cnt);
+    std::vector<double> hess_sorted(cnt);
+    for (int i = 0; i < cnt; ++i) {
+      grad_sorted[i] = -1.0 + softmax[i];
+      hess_sorted[i] = softmax[i] * (1.0 - softmax[i]) + eps;
+    }
+
+    // Scatter back to original order
+    for (int i = 0; i < cnt; ++i) {
+      lambdas[sorted_idx[i]] = static_cast<score_t>(grad_sorted[i]);
+      hessians[sorted_idx[i]] = static_cast<score_t>(hess_sorted[i]);
+    }
+  }
+
+  const char* GetName() const override { return "listmle"; }
+};
+
+
 
 }  // namespace LightGBM
 #endif  // LightGBM_OBJECTIVE_RANK_OBJECTIVE_HPP_

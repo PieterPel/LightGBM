@@ -1,0 +1,14 @@
+[project]
+name = "lightgbm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "build>=1.2.2.post1",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.2.0",
+]

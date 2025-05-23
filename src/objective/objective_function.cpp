@@ -85,6 +85,10 @@ ObjectiveFunction* ObjectiveFunction::CreateObjectiveFunction(const std::string&
       return new RankXENDCG(config);
     } else if (type == std::string("listnet")) {
       return new ListNet(config);
+    } else if (type == std::string("listfold")) {
+      return new ListFold(config);
+    } else if (type == std::string("listmle")) {
+      return new ListMLE(config);
     } else if (type == std::string("multiclass")) {
       return new MulticlassSoftmax(config);
     } else if (type == std::string("multiclassova")) {
@@ -132,6 +136,10 @@ ObjectiveFunction* ObjectiveFunction::CreateObjectiveFunction(const std::string&
     return new RankXENDCG(strs);
   } else if (type == std::string("listnet")) {
     return new ListNet(strs);
+  } else if (type == std::string("listfold")) {
+    return new ListFold(strs);
+  } else if (type == std::string("listmle")) {
+    return new ListMLE(strs);
   } else if (type == std::string("multiclass")) {
     return new MulticlassSoftmax(strs);
   } else if (type == std::string("multiclassova")) {
