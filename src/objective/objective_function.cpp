@@ -84,7 +84,7 @@ ObjectiveFunction* ObjectiveFunction::CreateObjectiveFunction(const std::string&
     } else if (type == std::string("rank_xendcg")) {
       return new RankXENDCG(config);
     } else if (type == std::string("listnet")) {
-      return new LisetNet(config);
+      return new ListNet(config);
     } else if (type == std::string("multiclass")) {
       return new MulticlassSoftmax(config);
     } else if (type == std::string("multiclassova")) {
