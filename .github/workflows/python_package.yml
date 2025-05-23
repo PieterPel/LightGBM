@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - more-ltr-loss-functions
   pull_request:
     branches:
       - master
