@@ -105,6 +105,8 @@ Metric* Metric::CreateMetric(const std::string& type, const Config& config) {
       return new AucMuMetric(config);
     } else if (type == std::string("ndcg")) {
       return new NDCGMetric(config);
+    } else if (type == std::string("ndcg+/-")) {
+      return new NDCGPlusMinusMetric(config);
     } else if (type == std::string("map")) {
       return new MapMetric(config);
     } else if (type == std::string("multi_logloss")) {

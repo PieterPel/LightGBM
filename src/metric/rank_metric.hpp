@@ -164,6 +164,99 @@ class NDCGMetric:public Metric {
   std::vector<std::vector<double>> inverse_max_dcgs_;
 };
 
+
+std::unique_ptr<Metadata> CreateReversedMetadata(const Metadata& original, data_size_t num_data) {
+  std::unique_ptr<Metadata> reversed(new Metadata());
+
+  reversed->InitByReference(num_data, &original);
+
+  const label_t* original_labels = original.label();
+  std::vector<label_t> reversed_labels(num_data);
+  label_t max_label = *std::max_element(original_labels, original_labels + num_data);
+  for (data_size_t i = 0; i < num_data; ++i) {
+    reversed_labels[i] = max_label - original_labels[i];
+  }
+  reversed->SetLabel(reversed_labels.data(), num_data);
+
+  if (original.query_boundaries() != nullptr) {
+    std::vector<data_size_t> query_sizes(original.num_queries());
+    const data_size_t* boundaries = original.query_boundaries();
+    for (data_size_t i = 0; i < original.num_queries(); ++i) {
+      query_sizes[i] = boundaries[i + 1] - boundaries[i];
+    }
+    reversed->SetQuery(query_sizes.data(), query_sizes.size());
+  } else {
+    Log::Fatal("Original metadata does not contain query boundaries.");
+  }
+
+  if (original.weights() != nullptr) {
+    reversed->SetWeights(original.weights(), num_data);
+  }
+
+  return reversed;
+}
+
+
+
+class NDCGPlusMinusMetric : public Metric {
+ public:
+  explicit NDCGPlusMinusMetric(const Config& config)
+      : normal_ndcg_(config), reversed_ndcg_(config) {}
+
+  void Init(const Metadata& metadata, data_size_t num_data) override {
+    num_data_ = num_data;
+
+    // Initialize normal NDCG
+    normal_ndcg_.Init(metadata, num_data);
+
+    // Create reversed metadata
+    reversed_metadata_ = CreateReversedMetadata(metadata, num_data);
+
+    // Initialize reversed NDCG
+    reversed_ndcg_.Init(*reversed_metadata_, num_data);
+
+    // Set metric names
+    name_ = normal_ndcg_.GetName();
+    for (auto& n : name_) {
+      n = "ndcg+/-" + n.substr(4);  // rename to ndcg+/-@k
+    }
+  }
+
+  const std::vector<std::string>& GetName() const override {
+    return name_;
+  }
+
+  double factor_to_bigger_better() const override {
+    return 1.0;
+  }
+
+  std::vector<double> Eval(const double* score, const ObjectiveFunction* obj) const override {
+    std::vector<double> normal = normal_ndcg_.Eval(score, obj);
+
+    // Reverse scores
+    std::vector<double> reversed_score(num_data_);
+    double max_score = *std::max_element(score, score + num_data_);
+    for (data_size_t i = 0; i < num_data_; ++i) {
+      reversed_score[i] = max_score - score[i];
+    }
+
+    std::vector<double> reversed = reversed_ndcg_.Eval(reversed_score.data(), obj);
+
+    std::vector<double> result(normal.size());
+    for (size_t i = 0; i < result.size(); ++i) {
+      result[i] = (normal[i] + reversed[i]) / 2.0;
+    }
+    return result;
+  }
+
+ private:
+  NDCGMetric normal_ndcg_;
+  NDCGMetric reversed_ndcg_;
+  std::unique_ptr<Metadata> reversed_metadata_;
+  std::vector<std::string> name_;
+  data_size_t num_data_;
+};
+
 }  // namespace LightGBM
 
 #endif   // LightGBM_METRIC_RANK_METRIC_HPP_
