@@ -361,7 +361,7 @@ if test "${BUILD_WHEEL}" = true; then
     # note that empty echo string leads to that xargs doesn't run the command
     # in some implementations of xargs
     # ref: https://stackoverflow.com/a/8296746
-    echo "--wheel --outdir ../dist ${BUILD_ARGS} ." | xargs python -m build
+    echo "--wheel --outdir ../dist ${BUILD_ARGS} ." | xargs uv run -m build
 fi
 
 if test "${INSTALL}" = true; then
