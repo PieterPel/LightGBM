@@ -47,10 +47,8 @@
                   };
 
                   enterShell = ''
-                    hello
+                    source .devenv/state/venv/bin/activate
                   '';
-
-                  processes.hello.exec = "hello";
                 }
               ];
             };
