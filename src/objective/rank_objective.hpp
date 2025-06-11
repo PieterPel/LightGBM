@@ -16,6 +16,7 @@
 #include <limits>
 #include <string>
 #include <vector>
+#include <numeric>
 
 namespace LightGBM {
 
