@@ -678,7 +678,7 @@ class ApproxListFold : public RankingObjective {
       hessians[sorted_idx[i]] = static_cast<score_t>(hess[i]);
     }
   }
-  const char* GetName() const override { return "listfold"; }
+  const char* GetName() const override { return "approx_listfold"; }
  private:
   std::vector<double> ComputeApproxListFoldGradient(const std::vector<double>& preds) const {
     int num_predictions = preds.size();
