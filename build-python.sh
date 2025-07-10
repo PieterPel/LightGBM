@@ -374,7 +374,7 @@ if test "${INSTALL}" = true; then
     fi
     # ref for use of '--find-links': https://stackoverflow.com/a/52481267/3986677
     # shellcheck disable=SC2086
-    pip install \
+    uv pip install \
         ${PIP_INSTALL_ARGS} \
         --force-reinstall \
         --no-cache-dir \

@@ -643,6 +643,137 @@ class ListFold : public RankingObjective {
   }
 };
 
+class ApproxListFold : public RankingObjective {
+ public:
+  explicit ApproxListFold(const Config& config) : RankingObjective(config) {}
+  explicit ApproxListFold(const std::vector<std::string>& strs)
+      : RankingObjective(strs) {}
+  ~ApproxListFold() {}
+  void Init(const Metadata& metadata, data_size_t num_data) override {
+    RankingObjective::Init(metadata, num_data);
+  }
+  inline void GetGradientsForOneQuery(data_size_t query_id, data_size_t cnt,
+                                      const label_t* label, const double* score,
+                                      score_t* lambdas,
+                                      score_t* hessians) const override {
+    if (cnt <= 1) {
+      for (data_size_t i = 0; i < cnt; ++i) {
+        lambdas[i] = 0.0f;
+        hessians[i] = 0.0f;
+      }
+      return;
+    }
+    std::vector<int> sorted_idx(cnt);
+    std::iota(sorted_idx.begin(), sorted_idx.end(), 0);
+    std::sort(sorted_idx.begin(), sorted_idx.end(),
+              [&](int a, int b) { return label[a] > label[b]; });
+    std::vector<double> sorted_scores(cnt);
+    for (int i = 0; i < cnt; ++i) {
+      sorted_scores[i] = score[sorted_idx[i]];
+    }
+    std::vector<double> grad = ComputeApproxListFoldGradient(sorted_scores);
+    std::vector<double> hess = ComputeApproxListFoldHessian(sorted_scores);
+    for (int i = 0; i < cnt; ++i) {
+      lambdas[sorted_idx[i]] = static_cast<score_t>(grad[i]);
+      hessians[sorted_idx[i]] = static_cast<score_t>(hess[i]);
+    }
+  }
+  const char* GetName() const override { return "listfold"; }
+ private:
+  std::vector<double> ComputeApproxListFoldGradient(const std::vector<double>& preds) const {
+    int num_predictions = preds.size();
+    int n = num_predictions / 2;
+    std::vector<double> gradients(num_predictions, 0.0);
+    
+    for (int i = 0; i < n; ++i) {
+      int start = i;
+      int end = num_predictions - i;
+      
+      // Extract segment
+      std::vector<double> segment(preds.begin() + start, preds.begin() + end);
+      
+      // Compute exp(segment) and exp(-segment)
+      std::vector<double> exp_segment(segment.size());
+      std::vector<double> exp_neg_segment(segment.size());
+      for (size_t j = 0; j < segment.size(); ++j) {
+        exp_segment[j] = std::exp(segment[j]);
+        exp_neg_segment[j] = std::exp(-segment[j]);
+      }
+      
+      // Compute sums
+      double sum_exp = 0.0;
+      double sum_exp_neg = 0.0;
+      for (size_t j = 0; j < exp_segment.size(); ++j) {
+        sum_exp += exp_segment[j];
+        sum_exp_neg += exp_neg_segment[j];
+      }
+      
+      int correction = end - start;
+      double denom = sum_exp * sum_exp_neg - correction;
+      
+      // Add to top half and subtract from bottom half
+      for (int j = n; j < num_predictions; ++j) {
+        gradients[j] += 1.0;
+      }
+      for (int j = 0; j < n; ++j) {
+        gradients[j] -= 1.0;
+      }
+      
+      // Compute and add dlog
+      for (int j = 0; j < (end - start); ++j) {
+        double dlog = (exp_segment[j] / sum_exp - exp_neg_segment[j] / sum_exp_neg) / denom;
+        gradients[start + j] += dlog;
+      }
+    }
+    
+    return gradients;
+  }
+  
+  std::vector<double> ComputeApproxListFoldHessian(const std::vector<double>& preds) const {
+    int num_predictions = preds.size();
+    int n = num_predictions / 2;
+    std::vector<double> hessians(num_predictions, 0.0);
+    
+    for (int i = 0; i < n; ++i) {
+      int start = i;
+      int end = num_predictions - i;
+      
+      // Extract segment
+      std::vector<double> segment(preds.begin() + start, preds.begin() + end);
+      
+      // Compute exp(segment) and exp(-segment)
+      std::vector<double> exp_segment(segment.size());
+      std::vector<double> exp_neg_segment(segment.size());
+      for (size_t j = 0; j < segment.size(); ++j) {
+        exp_segment[j] = std::exp(segment[j]);
+        exp_neg_segment[j] = std::exp(-segment[j]);
+      }
+      
+      // Compute sums
+      double sum_exp = 0.0;
+      double sum_exp_neg = 0.0;
+      for (size_t j = 0; j < exp_segment.size(); ++j) {
+        sum_exp += exp_segment[j];
+        sum_exp_neg += exp_neg_segment[j];
+      }
+      
+      int correction = end - start;
+      double denom = sum_exp * sum_exp_neg - correction;
+      
+      // Compute and add d2log
+      for (int j = 0; j < (end - start); ++j) {
+        double d2log = (
+          (exp_segment[j] * (sum_exp - exp_segment[j])) / (sum_exp * sum_exp) +
+          (exp_neg_segment[j] * (sum_exp_neg - exp_neg_segment[j])) / (sum_exp_neg * sum_exp_neg)
+        ) / denom;
+        hessians[start + j] += d2log;
+      }
+    }
+    
+    return hessians;
+  }
+};
+
 /*!
  * \brief Implementation of the learning-to-rank objective function, ListMLE
  * [arxiv.org/abs/1909.06722].
