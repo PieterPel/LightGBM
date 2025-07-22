@@ -742,80 +742,8 @@ class ApproxListFold : public RankingObjective {
     return gradients;
   }
   
+
   std::vector<double> ComputeApproxListFoldHessian(const std::vector<double>& preds) const {
-    int num_predictions = preds.size();
-    int n = num_predictions / 2;
-    std::vector<double> hessians(num_predictions, 0.0);
-    
-    for (int i = 0; i < n; ++i) {
-      int start = i;
-      int end = 2*n + 1 - i;
-      
-      // Extract segment
-      std::vector<double> segment(preds.begin() + start, preds.begin() + end);
-      
-      // Compute exp(segment) and exp(-segment)
-      std::vector<double> exp_segment(segment.size());
-      std::vector<double> exp_neg_segment(segment.size());
-      for (size_t j = 0; j < segment.size(); ++j) {
-        exp_segment[j] = std::exp(segment[j]);
-        exp_neg_segment[j] = std::exp(-segment[j]);
-      }
-      
-      // Compute sums A_i and B_i
-      double A_i = 0.0;
-      double B_i = 0.0;
-      for (size_t j = 0; j < exp_segment.size(); ++j) {
-        A_i += exp_segment[j];
-        B_i += exp_neg_segment[j];
-      }
-      
-      double C_i = A_i * B_i - (2*n + 1 - 2*i);
-      
-      // Add numerical stability check
-      if (std::abs(C_i) < 1e-10) {
-        continue; // Skip this iteration if denominator is too small
-      }
-      
-      // Compute diagonal Hessian contribution using CORRECTED quotient rule
-      for (int j = 0; j < (end - start); ++j) {
-        double exp_s_k = exp_segment[j];
-        double exp_neg_s_k = exp_neg_segment[j];
-        
-        // First derivatives
-        double dA_ds_k = exp_s_k;
-        double dB_ds_k = -exp_neg_s_k;
-        double dC_ds_k = B_i * dA_ds_k + A_i * dB_ds_k;  // = B_i * exp_s_k - A_i * exp_neg_s_k
-        
-        // Second derivatives  
-        double d2A_ds_k2 = exp_s_k;
-        double d2B_ds_k2 = exp_neg_s_k;
-        double d2C_ds_k2 = B_i * d2A_ds_k2 + A_i * d2B_ds_k2 + 2 * dA_ds_k * dB_ds_k;
-        // = B_i * exp_s_k + A_i * exp_neg_s_k + 2 * exp_s_k * (-exp_neg_s_k)
-        // = B_i * exp_s_k + A_i * exp_neg_s_k - 2 * exp_s_k * exp_neg_s_k
-        
-        // Numerator f = B_i * exp(s_k) - A_i * exp(-s_k)
-        double f = B_i * exp_s_k - A_i * exp_neg_s_k;
-        double df_ds_k = B_i * exp_s_k + A_i * exp_neg_s_k;
-        double d2f_ds_k2 = B_i * exp_s_k - A_i * exp_neg_s_k;
-        
-        // Correct quotient rule: d²/dx²[f/g] = [g*f'' - f*g'']/g² - 2*f'*g'/g² + 2*f*(g')²/g³
-        double C_i_squared = C_i * C_i;
-        double C_i_cubed = C_i_squared * C_i;
-        
-        double term1 = (C_i * d2f_ds_k2 - f * d2C_ds_k2) / C_i_squared;
-        double term2 = -2.0 * df_ds_k * dC_ds_k / C_i_squared;
-        double term3 = 2.0 * f * dC_ds_k * dC_ds_k / C_i_cubed;
-        
-        hessians[start + j] += term1 + term2 + term3;
-      }
-    }
-    
-    return hessians;
-  }
-  
-  // Alternative simplified version that matches the working pattern
-  std::vector<double> ComputeApproxListFoldHessianSimple(const std::vector<double>& preds) const {
     int num_predictions = preds.size();
     int n = num_predictions / 2;
     std::vector<double> hessians(num_predictions, 0.0);
