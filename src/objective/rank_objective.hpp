@@ -694,7 +694,7 @@ class ApproxListFold : public RankingObjective {
     int n = num_predictions / 2;
     std::vector<double> gradients(num_predictions, 0.0);
     
-    // Linear terms (only added once)
+    // Linear terms
     for (int j = n; j < 2*n; ++j) {
       gradients[j] += 1.0;  // top half
     }
@@ -705,44 +705,45 @@ class ApproxListFold : public RankingObjective {
     for (int i = 0; i < n; ++i) {
       int start = i;
       int end = 2*n + 1 - i;
+      int segment_size = end - start;
       
-      // Extract segment
-      std::vector<double> segment(preds.begin() + start, preds.begin() + end);
+      // Pre-allocate vectors once (could be optimized further by moving outside loop)
+      std::vector<double> exp_segment(segment_size);
+      std::vector<double> exp_neg_segment(segment_size);
       
-      // Compute exp(segment) and exp(-segment)
-      std::vector<double> exp_segment(segment.size());
-      std::vector<double> exp_neg_segment(segment.size());
-      for (size_t j = 0; j < segment.size(); ++j) {
-        exp_segment[j] = std::exp(segment[j]);
-        exp_neg_segment[j] = std::exp(-segment[j]);
+      // Compute exponentials for the segment
+      for (int j = 0; j < segment_size; ++j) {
+        exp_segment[j] = std::exp(preds[start + j]);
+        exp_neg_segment[j] = std::exp(-preds[start + j]);
       }
       
-      // Compute sums A_i and B_i
-      double A_i = 0.0;
-      double B_i = 0.0;
-      for (size_t j = 0; j < exp_segment.size(); ++j) {
-        A_i += exp_segment[j];
-        B_i += exp_neg_segment[j];
+      // Compute sums
+      double sum_exp = 0.0;
+      double sum_exp_neg = 0.0;
+      for (int j = 0; j < segment_size; ++j) {
+        sum_exp += exp_segment[j];
+        sum_exp_neg += exp_neg_segment[j];
       }
       
-      double C_i = A_i * B_i - (2*n + 1 - 2*i);
+      double correction = 2*n + 1 - 2*i;
+      double denom = sum_exp * sum_exp_neg - correction;
       
       // Add numerical stability check
-      if (std::abs(C_i) < 1e-10) {
+      if (std::abs(denom) < 1e-10) {
         continue; // Skip this iteration if denominator is too small
       }
       
-      // Compute and add gradient contribution from log term
-      for (int j = 0; j < (end - start); ++j) {
-        double grad_contrib = (B_i * exp_segment[j] - A_i * exp_neg_segment[j]) / C_i;
-        gradients[start + j] += grad_contrib;
+      // Compute gradient contribution using Python formula
+      for (int j = 0; j < segment_size; ++j) {
+        double dlog = (exp_segment[j] * sum_exp_neg - exp_neg_segment[j] * sum_exp) / 
+                      (sum_exp * sum_exp_neg * denom);
+        gradients[start + j] += dlog;
       }
     }
     
     return gradients;
   }
   
-
   std::vector<double> ComputeApproxListFoldHessian(const std::vector<double>& preds) const {
     int num_predictions = preds.size();
     int n = num_predictions / 2;
@@ -751,22 +752,22 @@ class ApproxListFold : public RankingObjective {
     for (int i = 0; i < n; ++i) {
       int start = i;
       int end = 2*n + 1 - i;
+      int segment_size = end - start;
       
-      // Extract segment
-      std::vector<double> segment(preds.begin() + start, preds.begin() + end);
+      // Pre-allocate vectors
+      std::vector<double> exp_segment(segment_size);
+      std::vector<double> exp_neg_segment(segment_size);
       
-      // Compute exp(segment) and exp(-segment)
-      std::vector<double> exp_segment(segment.size());
-      std::vector<double> exp_neg_segment(segment.size());
-      for (size_t j = 0; j < segment.size(); ++j) {
-        exp_segment[j] = std::exp(segment[j]);
-        exp_neg_segment[j] = std::exp(-segment[j]);
+      // Compute exponentials for the segment
+      for (int j = 0; j < segment_size; ++j) {
+        exp_segment[j] = std::exp(preds[start + j]);
+        exp_neg_segment[j] = std::exp(-preds[start + j]);
       }
       
       // Compute sums
       double sum_exp = 0.0;
       double sum_exp_neg = 0.0;
-      for (size_t j = 0; j < exp_segment.size(); ++j) {
+      for (int j = 0; j < segment_size; ++j) {
         sum_exp += exp_segment[j];
         sum_exp_neg += exp_neg_segment[j];
       }
@@ -778,15 +779,11 @@ class ApproxListFold : public RankingObjective {
         continue; // Skip if denominator too small
       }
       
-      // Use similar structure to working version
-      for (int j = 0; j < (end - start); ++j) {
-        double exp_s_k = exp_segment[j];
-        double exp_neg_s_k = exp_neg_segment[j];
-        
-        // Simplified Hessian computation following working pattern
+      // Compute Hessian using Python formula
+      for (int j = 0; j < segment_size; ++j) {
         double d2log = (
-          (exp_s_k * sum_exp_neg * (sum_exp - exp_s_k)) / (sum_exp * sum_exp) +
-          (exp_neg_s_k * sum_exp * (sum_exp_neg - exp_neg_s_k)) / (sum_exp_neg * sum_exp_neg)
+          (exp_segment[j] * sum_exp_neg * (sum_exp - exp_segment[j])) / (sum_exp * sum_exp) +
+          (exp_neg_segment[j] * sum_exp * (sum_exp_neg - exp_neg_segment[j])) / (sum_exp_neg * sum_exp_neg)
         ) / (sum_exp_neg * sum_exp * denom);
         
         hessians[start + j] += d2log;
@@ -795,7 +792,7 @@ class ApproxListFold : public RankingObjective {
     
     return hessians;
   }
-};
+}
 
 /*!
  * \brief Implementation of the learning-to-rank objective function, ListMLE
