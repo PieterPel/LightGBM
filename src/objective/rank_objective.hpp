@@ -792,7 +792,7 @@ class ApproxListFold : public RankingObjective {
     
     return hessians;
   }
-}
+};
 
 /*!
  * \brief Implementation of the learning-to-rank objective function, ListMLE
