@@ -87,6 +87,8 @@ ObjectiveFunction* ObjectiveFunction::CreateObjectiveFunction(const std::string&
       return new ListNet(config);
     } else if (type == std::string("listfold")) {
       return new ListFold(config);
+    } else if (type == std::string("approx_listfold")) {
+      return new ApproxListFold(config);
     } else if (type == std::string("listmle")) {
       return new ListMLE(config);
     } else if (type == std::string("multiclass")) {
@@ -138,6 +140,8 @@ ObjectiveFunction* ObjectiveFunction::CreateObjectiveFunction(const std::string&
     return new ListNet(strs);
   } else if (type == std::string("listfold")) {
     return new ListFold(strs);
+  } else if (type == std::string("approx_listfold")) {
+    return new ApproxListFold(strs);
   } else if (type == std::string("listmle")) {
     return new ListMLE(strs);
   } else if (type == std::string("multiclass")) {

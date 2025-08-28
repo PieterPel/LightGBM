@@ -16,6 +16,7 @@
 #include <limits>
 #include <string>
 #include <vector>
+#include <numeric>
 
 namespace LightGBM {
 
@@ -639,6 +640,157 @@ class ListFold : public RankingObjective {
     }
 
     return hess;
+  }
+};
+
+
+class ApproxListFold : public RankingObjective {
+ public:
+  explicit ApproxListFold(const Config& config) : RankingObjective(config) {}
+  explicit ApproxListFold(const std::vector<std::string>& strs)
+      : RankingObjective(strs) {}
+  ~ApproxListFold() {}
+  
+  void Init(const Metadata& metadata, data_size_t num_data) override {
+    RankingObjective::Init(metadata, num_data);
+  }
+  
+  inline void GetGradientsForOneQuery(data_size_t query_id, data_size_t cnt,
+                                      const label_t* label, const double* score,
+                                      score_t* lambdas,
+                                      score_t* hessians) const override {
+    if (cnt <= 1) {
+      for (data_size_t i = 0; i < cnt; ++i) {
+        lambdas[i] = 0.0f;
+        hessians[i] = 0.0f;
+      }
+      return;
+    }
+    
+    std::vector<int> sorted_idx(cnt);
+    std::iota(sorted_idx.begin(), sorted_idx.end(), 0);
+    std::sort(sorted_idx.begin(), sorted_idx.end(),
+              [&](int a, int b) { return label[a] > label[b]; });
+    
+    std::vector<double> sorted_scores(cnt);
+    for (int i = 0; i < cnt; ++i) {
+      sorted_scores[i] = score[sorted_idx[i]];
+    }
+    
+    std::vector<double> grad = ComputeApproxListFoldGradient(sorted_scores);
+    std::vector<double> hess = ComputeApproxListFoldHessian(sorted_scores);
+    
+    for (int i = 0; i < cnt; ++i) {
+      lambdas[sorted_idx[i]] = static_cast<score_t>(grad[i]);
+      hessians[sorted_idx[i]] = static_cast<score_t>(hess[i]);
+    }
+  }
+  
+  const char* GetName() const override { return "approx_listfold"; }
+
+ private:
+  std::vector<double> ComputeApproxListFoldGradient(const std::vector<double>& preds) const {
+    int num_predictions = preds.size();
+    int n = num_predictions / 2;
+    std::vector<double> gradients(num_predictions, 0.0);
+    
+    // Linear terms
+    for (int j = n; j < 2*n; ++j) {
+      gradients[j] += 1.0;  // top half
+    }
+    for (int j = 0; j < n; ++j) {
+      gradients[j] -= 1.0;  // bottom half
+    }
+    
+    for (int i = 0; i < n; ++i) {
+      int start = i;
+      int end = 2*n + 1 - i;
+      int segment_size = end - start;
+      
+      // Pre-allocate vectors once (could be optimized further by moving outside loop)
+      std::vector<double> exp_segment(segment_size);
+      std::vector<double> exp_neg_segment(segment_size);
+      
+      // Compute exponentials for the segment
+      for (int j = 0; j < segment_size; ++j) {
+        exp_segment[j] = std::exp(preds[start + j]);
+        exp_neg_segment[j] = std::exp(-preds[start + j]);
+      }
+      
+      // Compute sums
+      double sum_exp = 0.0;
+      double sum_exp_neg = 0.0;
+      for (int j = 0; j < segment_size; ++j) {
+        sum_exp += exp_segment[j];
+        sum_exp_neg += exp_neg_segment[j];
+      }
+      
+      double correction = 2*n + 1 - 2*i;
+      double denom = sum_exp * sum_exp_neg - correction;
+      
+      // Add numerical stability check
+      if (std::abs(denom) < 1e-10) {
+        continue; // Skip this iteration if denominator is too small
+      }
+      
+      // Compute gradient contribution using Python formula
+      for (int j = 0; j < segment_size; ++j) {
+        double dlog = (exp_segment[j] * sum_exp_neg - exp_neg_segment[j] * sum_exp) / 
+                      (sum_exp * sum_exp_neg * denom);
+        gradients[start + j] += dlog;
+      }
+    }
+    
+    return gradients;
+  }
+  
+  std::vector<double> ComputeApproxListFoldHessian(const std::vector<double>& preds) const {
+    int num_predictions = preds.size();
+    int n = num_predictions / 2;
+    std::vector<double> hessians(num_predictions, 0.0);
+    
+    for (int i = 0; i < n; ++i) {
+      int start = i;
+      int end = 2*n + 1 - i;
+      int segment_size = end - start;
+      
+      // Pre-allocate vectors
+      std::vector<double> exp_segment(segment_size);
+      std::vector<double> exp_neg_segment(segment_size);
+      
+      // Compute exponentials for the segment
+      for (int j = 0; j < segment_size; ++j) {
+        exp_segment[j] = std::exp(preds[start + j]);
+        exp_neg_segment[j] = std::exp(-preds[start + j]);
+      }
+      
+      // Compute sums
+      double sum_exp = 0.0;
+      double sum_exp_neg = 0.0;
+      for (int j = 0; j < segment_size; ++j) {
+        sum_exp += exp_segment[j];
+        sum_exp_neg += exp_neg_segment[j];
+      }
+      
+      double correction = 2*n + 1 - 2*i;
+      double denom = sum_exp * sum_exp_neg - correction;
+      
+      if (std::abs(denom) < 1e-10) {
+        continue; // Skip if denominator too small
+      }
+      
+      // Compute Hessian using Python formula
+      for (int j = 0; j < segment_size; ++j) {
+        double d2log = (
+          (exp_segment[j] * sum_exp_neg * (sum_exp - exp_segment[j])) / (sum_exp * sum_exp) +
+          (exp_neg_segment[j] * sum_exp * (sum_exp_neg - exp_neg_segment[j])) / (sum_exp_neg * sum_exp_neg)
+        ) / (sum_exp_neg * sum_exp * denom);
+        
+        hessians[start + j] += d2log;
+      }
+    }
+    
+    return hessians;
   }
 };
 

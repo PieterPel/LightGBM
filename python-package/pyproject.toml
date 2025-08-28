@@ -21,7 +21,8 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=1.17.0",
-    "scipy"
+    "scipy",
+    "build>=0.10.0"
 ]
 description = "LightGBM Python-package"
 license = {file = "LICENSE"}
